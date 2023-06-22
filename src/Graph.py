@@ -5,6 +5,7 @@
 # Copyright (c) 2017-2021. Washington State University.
 
 import json
+import math
         
 # The Graph class allows the representation of an attributed, mixed multi-graph with time stamps on nodes
 # and edges. A graph has an id and a className (for now, either "positive" or "negative"). Each node has
@@ -277,51 +278,159 @@ class Edge:
 # New in version 1.2: poly-time-bounded graph matcher
 
 gMaxMappings = 1 # Will be set to E^2 for each match
+c_max = 1
+c_ratio_thr = 0.0
+
+# def GraphMatch(graph1, graph2):
+#     """Returns True if given graphs are isomorphic.
+#     This is a poly-time, approximate version of graph isomorphism."""
+#     global gMaxMappings
+#     if (len(graph1.vertices) != len(graph2.vertices)):
+#         return False
+#     if (len(graph1.edges) != len(graph2.edges)):
+#         return False
+#     if (len(graph1.edges) == 0):
+#         v1keys = list(graph1.vertices.keys())
+#         v2keys = list(graph2.vertices.keys())
+#         return MatchVertex(graph1, graph2, v1keys[0], v2keys[0])
+#     gMaxMappings = len(graph1.edges) ** 2 # Limit search to E^2 mappings
+#     matchFound, numMappings = ExtendMapping(graph1, graph2)
+#     return matchFound
 
 def GraphMatch(graph1, graph2):
     """Returns True if given graphs are isomorphic.
     This is a poly-time, approximate version of graph isomorphism."""
     global gMaxMappings
-    if (len(graph1.vertices) != len(graph2.vertices)):
-        return False
-    if (len(graph1.edges) != len(graph2.edges)):
-        return False
     if (len(graph1.edges) == 0):
         v1keys = list(graph1.vertices.keys())
         v2keys = list(graph2.vertices.keys())
         return MatchVertex(graph1, graph2, v1keys[0], v2keys[0])
+    
     gMaxMappings = len(graph1.edges) ** 2 # Limit search to E^2 mappings
-    matchFound, numMappings = ExtendMapping(graph1, graph2)
-    return matchFound
 
-def ExtendMapping(graph1, graph2, mapping=None, numMappings=0):
-    """Find the next unmapped edge in graph1 and try mapping it to each unmapped edge in graph2.
-    Constrain number of mappings to be at most gMaxMappings. Return the match result and
-    number of mappings so far."""
-    global gMaxMappings
+    # print("g1 vertices: ", graph1.vertices)
+    # print("g2 vertices: ", graph2.vertices)
+    
+    cost = ExtendMapping(graph1, graph2)    
+    return (float(cost) / float(max(len(graph1.vertices), len(graph2.vertices)))) <= c_ratio_thr
+
+def ExtendMapping(graph1, graph2, mapping=None, cost = 0.0):
+    global c_max
+    if cost > c_max:
+        return cost
     if mapping is None:
         mapping = {}
-    if (len(mapping) == len(graph1.edges)):
-        return True, numMappings
-    if numMappings > gMaxMappings:
-        return False, numMappings
-    # Find unmapped edge in graph1 (should always exist at this point)
-    edgeId1 = None
-    for edgeId in graph1.edges:
-        if (not (edgeId in mapping)):
-            edgeId1 = edgeId
+    if (len(mapping) == len(graph1.vertices)):
+        return cost
+    
+    map = mapping
+    v_id_c = None
+    for v_id_1 in graph1.vertices.keys():
+        if not (v_id_1 in map):
+            v_id_c = v_id_1
             break
-    # Find unmapped, matching edge in graph2
-    for edgeId2 in graph2.edges:
-        if not (edgeId2 in mapping.values()):
-            if MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
-                # Extend mapping
-                mapping[edgeId1] = edgeId2
-                matchFound, numMappings = ExtendMapping(graph1, graph2, mapping, numMappings + 1)
-                if matchFound:
-                    return True, numMappings
-                mapping.pop(edgeId1)
-    return False, numMappings
+    
+    c_b = math.inf
+    map_b = None
+    for v_id_2 in graph2.vertices.keys():
+        if not (v_id_2 in map):
+            c = getVertexMatchingCost(graph1, graph2, v_id_c, v_id_2)
+            if cost + c > c_max:
+                continue
+            map[v_id_c] = v_id_2
+            c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+            if c_tot < c_b:
+                c_b = c_tot
+                map_b = map
+    # Map to lambda vertex
+    c = getVertexMatchingCost(graph1, graph2, v_id_c, -1)
+    if cost + c < c_max:
+        map[v_id_c] = -1  # Mapped to lambda
+        c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+        if c_tot < c_b:
+            c_b = c_tot
+            map_b = map
+    if c_b >= c_max:
+        c_b = c_max + 1  # +1 is just to make c_b > c_max
+    mapping = map
+    return c_b
+
+def getVertexMatchingCost(graph1, graph2, v_id_1, v_id_2):
+    if v_id_1 == -1:
+        if v_id_2 == -1:
+            return 0
+        else:
+            return len(graph2.vertices[v_id_2].edges)
+    if v_id_2 == -1:
+        if v_id_1 == -1:
+            return 0
+        else:
+            # print("graph1 vertices:", graph1.vertices)
+            # print("v_id_1:", v_id_1)
+            return len(graph1.vertices[v_id_1].edges)
+    
+    ret_cost = 0
+    vertex1 = graph1.vertices[v_id_1]
+    vertex2 = graph2.vertices[v_id_2]
+    if not (vertex1.attributes == vertex2.attributes):
+        ret_cost += 1
+    
+    e1 = graph1.vertices[v_id_1].edges
+    e2 = graph2.vertices[v_id_2].edges
+
+    # print("e1 for v1:", e1)
+    # print("e2 for v2:", e2)
+
+    for e_1 in e1:
+        e_id_1 = e_1.id
+        if len(e2) <= 0:
+            break
+        c_b = math.inf
+        for e_2 in e2:
+            e_id_2 = e_2.id
+            useless = None
+            c = not MatchEdge(graph1, graph2, e_id_1, e_id_2, useless)
+            if not c:
+                c_b = c
+                break
+            elif c < c_b:
+                c_b = c
+                e2.remove(e_2)
+        ret_cost += c_b
+        e1.remove(e_1)
+    ret_cost += len(e1)
+
+    return ret_cost          
+
+
+# def ExtendMapping(graph1, graph2, mapping=None, numMappings=0):
+#     """Find the next unmapped edge in graph1 and try mapping it to each unmapped edge in graph2.
+#     Constrain number of mappings to be at most gMaxMappings. Return the match result and
+#     number of mappings so far."""
+#     global gMaxMappings
+#     if mapping is None:
+#         mapping = {}
+#     if (len(mapping) == len(graph1.edges)):
+#         return True, numMappings
+#     if numMappings > gMaxMappings:
+#         return False, numMappings
+#     # Find unmapped edge in graph1 (should always exist at this point)
+#     edgeId1 = None
+#     for edgeId in graph1.edges:
+#         if (not (edgeId in mapping)):
+#             edgeId1 = edgeId
+#             break
+#     # Find unmapped, matching edge in graph2
+#     for edgeId2 in graph2.edges:
+#         if not (edgeId2 in mapping.values()):
+#             if MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
+#                 # Extend mapping
+#                 mapping[edgeId1] = edgeId2
+#                 matchFound, numMappings = ExtendMapping(graph1, graph2, mapping, numMappings + 1)
+#                 if matchFound:
+#                     return True, numMappings
+#                 mapping.pop(edgeId1)
+#     return False, numMappings
 
 def GraphMatch_Orig(graph1, graph2):
     """Returns True if given graphs are isomorphic.
@@ -363,6 +472,10 @@ def ExtendMapping_Orig(graph1, graph2, mapping=None):
 def MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
     """Return True if edges, corresponding to given edge IDs in given graphs, match;
     i.e., have same attributes, direction, temporal ordering, and source/target vertices."""
+    # print("edgeId1:", edgeId1)
+    # print("edgeId2:", edgeId2)
+    # print("e1:", graph1.edges)
+    # print("e2:", graph2.edges)
     edge1 = graph1.edges[edgeId1]
     edge2 = graph2.edges[edgeId2]
     if not (edge1.attributes == edge2.attributes):

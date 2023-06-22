@@ -17,7 +17,8 @@ class Pattern:
     def evaluate (self, graph):
         """Compute value of using given pattern to compress given graph, where 0 means no compression, and 1 means perfect compression."""
         # (instances-1) because we would also need to retain the definition of the pattern for compression
-        self.value = float(((len(self.instances) - 1) * len(self.definition.edges)) / float(len(graph.edges))) 
+        self.value = float(((len(self.instances) - 1) * len(self.definition.edges)) / float(len(graph.edges)))
+        # self.value = float((len(self.instances) - 1) * len(self.definition.edges))
     
     def print_pattern(self, tab):
         print(tab + "Pattern (value=" + str(self.value) + ", instances=" + str(len(self.instances)) + "):")
