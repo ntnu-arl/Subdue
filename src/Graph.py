@@ -6,6 +6,7 @@
 
 import json
 import math
+import numpy as np
         
 # The Graph class allows the representation of an attributed, mixed multi-graph with time stamps on nodes
 # and edges. A graph has an id and a className (for now, either "positive" or "negative"). Each node has
@@ -17,6 +18,7 @@ class Graph:
     def __init__(self):
         self.vertices = {}
         self.edges = {}
+        self.label_maps = {}
     
     def Compress(self,iteration,pattern):
         """Compress graph using given pattern at given iteration. Replaces each instance of pattern with a new
@@ -82,6 +84,11 @@ class Graph:
                         json_attrs = vertexDict['attributes']
                         for key,value in json_attrs.items():
                             vertex.add_attribute(key, value)
+                            if(key == 'label'):
+                                if(value in self.label_maps):
+                                    self.label_maps[value].append(vertexId)
+                                else:
+                                    self.label_maps[value] = [vertexId]
                     self.vertices[vertexId] = vertex
             if ('edge' in json_object):
                 edgeDict = json_object['edge']
@@ -103,6 +110,7 @@ class Graph:
                 self.edges[edgeId] = edge
                 sourceVertex.add_edge(edge)
                 targetVertex.add_edge(edge)
+        print(self.label_maps)
 
     def load_from_networkx(
         self,
@@ -197,6 +205,8 @@ class Vertex:
         self.temporal = 0 # used to set arrival order of vertex internally for graph matcher
         self.attributes = {}
         self.edges = []
+        self.position = np.array([0.0, 0.0, 0.0])
+        self.in_a_pattern = False
     
     def add_attribute(self, key, value):
         self.attributes[key] = value
@@ -278,159 +288,424 @@ class Edge:
 # New in version 1.2: poly-time-bounded graph matcher
 
 gMaxMappings = 1 # Will be set to E^2 for each match
-c_max = 1
-c_ratio_thr = 0.0
+c_max = 20
+c_ratio_thr = 0.3
 
-# def GraphMatch(graph1, graph2):
-#     """Returns True if given graphs are isomorphic.
-#     This is a poly-time, approximate version of graph isomorphism."""
-#     global gMaxMappings
-#     if (len(graph1.vertices) != len(graph2.vertices)):
-#         return False
-#     if (len(graph1.edges) != len(graph2.edges)):
-#         return False
-#     if (len(graph1.edges) == 0):
-#         v1keys = list(graph1.vertices.keys())
-#         v2keys = list(graph2.vertices.keys())
-#         return MatchVertex(graph1, graph2, v1keys[0], v2keys[0])
-#     gMaxMappings = len(graph1.edges) ** 2 # Limit search to E^2 mappings
-#     matchFound, numMappings = ExtendMapping(graph1, graph2)
-#     return matchFound
+def calculateHash(graph):
+    hash = ""
+    for vid in graph.vertices.keys():
+        vid_int = int(vid)
+        hash += str(1000 + vid_int)
+    hash += "e"
+    for eid in graph.edges.keys():
+        eid_int = int(eid)
+        hash += str(1000 + eid_int)
+    return hash
+
+def removeDuplicateGraphs(graph_list):
+    graph_hash_map = {}
+    for g in graph_list:
+        g_hash = calculateHash(g)
+        if not g_hash in graph_hash_map.keys():
+            graph_hash_map[g_hash] = g
+
+    updated_list = list(graph_hash_map.values())
+    return updated_list
+
+def ExtendGraphByEdge(graph, banned_sturctures):
+    pass
+
+def ExtendSubGraphWithPatternCheck(subgraph, graph, pattern, subgraph_pattern_maps, new_maps_per_struct):
+    # returns list of extended_graphs
+    # Checks if the extended vertex label belongs to the pattern
+    print("Extending subgraph:")
+    subgraph.print_graph()
+    extended_subgraphs = []
+    print("Edges in subgraph: ", [len(v.edges) for v in list(subgraph.vertices.values())])
+    unused_edges = [e for v in list(subgraph.vertices.values()) for e in v.edges if e.id not in list(subgraph.edges.keys())]
+    print("Unused edges:")
+    for e in unused_edges:
+        e.print_edge()
+    
+    print("maps:")
+    print(subgraph_pattern_maps)
+    for edge in unused_edges:
+        print("")
+        print("Processing edge", edge.id)
+        valid_extension = False
+        if edge.source.id in subgraph.vertices.keys():
+            # print("Source in subgraph")
+            for map_i in subgraph_pattern_maps:
+                mapped_id = map_i[edge.source.id]
+                for ext_edge in pattern.definition.vertices[mapped_id].edges:
+                    # print("ext_edge: source: ", ext_edge.source.id, ext_edge.source.attributes['label'], "target: ", ext_edge.target.id, ext_edge.target.attributes['label'])
+                    # print("Against:", edge.target.attributes['label'])
+                    if ext_edge.source.id != mapped_id:
+                        if ext_edge.source.attributes['label'] == edge.target.attributes['label']:
+                            valid_extension = True
+                            break # this edge extends to a vertex that is part of the pattern
+                    else:
+                        if ext_edge.target.attributes['label'] == edge.target.attributes['label']:
+                            valid_extension = True
+                            break # this edge extends to a vertex that is part of the pattern
+        elif edge.target.id in subgraph.vertices.keys():
+            # print("Target in subgraph")
+            for map_i in subgraph_pattern_maps:
+                mapped_id = map_i[edge.target.id]
+                for ext_edge in pattern.definition.vertices[mapped_id].edges:
+                    if ext_edge.source.id != mapped_id:
+                        if ext_edge.source.attributes['label'] == edge.source.attributes['label']:
+                            valid_extension = True
+                            break # this edge extends to a vertex that is part of the pattern
+                    else:
+                        if ext_edge.target.attributes['label'] == edge.source.attributes['label']:
+                            valid_extension = True
+                            break # this edge extends to a vertex that is part of the pattern
+        if not valid_extension:
+            print("Edge", edge.id, "is not valid")
+            continue
+        
+        new_struct = Graph()
+        new_struct.vertices = subgraph.vertices.copy()
+        new_struct.edges = subgraph.edges.copy()
+        new_struct.edges[edge.id] = edge
+        new_struct_mappings = []
+        # print("Before adding new vertex:")
+        # new_struct.print_graph()
+        if not edge.source.id in new_struct.vertices.keys():
+            for map_i in subgraph_pattern_maps:
+                # print("Checking map")
+                # print(map_i)
+                mapped_id = map_i[edge.target.id]
+                # print("mapped id:", mapped_id)
+                # print("New vertex label:", edge.source.attributes['label'])
+                for ext_edge in pattern.definition.vertices[mapped_id].edges:
+                    # print("     checking edge:", ext_edge.id)
+                    new_map = map_i.copy()
+                    mapping_successfull = False
+                    if ext_edge.source.id != mapped_id:
+                        # print("     end vertex", ext_edge.source.id, "label:", ext_edge.source.attributes['label'])
+                        if ext_edge.source.attributes['label'] == edge.source.attributes['label']:
+                            new_map[edge.source.id] = ext_edge.source.id
+                            mapping_successfull = True
+                    else:
+                        # print("     end vertex", ext_edge.target.id, "label:", ext_edge.target.attributes['label'])
+                        if ext_edge.target.attributes['label'] == edge.source.attributes['label']:
+                            new_map[edge.source.id] = ext_edge.target.id
+                            mapping_successfull = True
+                    if mapping_successfull:
+                        new_struct_mappings.append(new_map)
+            new_struct.vertices[edge.source.id] = edge.source
+        else:
+            for map_i in subgraph_pattern_maps:
+                # print("Checking map")
+                # print(map_i)
+                mapped_id = map_i[edge.source.id]
+                # print("mapped id:", mapped_id)
+                # print("New vertex label:", edge.target.attributes['label'])
+                for ext_edge in pattern.definition.vertices[mapped_id].edges:
+                    # print("     checking edge:", ext_edge.id)
+                    new_map = map_i.copy()
+                    mapping_successfull = False
+                    if ext_edge.source.id != mapped_id:
+                        # print("     end vertex", ext_edge.source.id, "label:", ext_edge.source.attributes['label'])
+                        if ext_edge.source.attributes['label'] == edge.target.attributes['label']:
+                            new_map[edge.target.id] = ext_edge.source.id
+                            mapping_successfull = True
+                    else:
+                        # print("     end vertex", ext_edge.target.id, "label:", ext_edge.target.attributes['label'])
+                        if ext_edge.target.attributes['label'] == edge.target.attributes['label']:
+                            new_map[edge.target.id] = ext_edge.target.id
+                            mapping_successfull = True
+                    if mapping_successfull:
+                        new_struct_mappings.append(new_map)
+            new_struct.vertices[edge.target.id] = edge.target
+        print("Adding new struct:")
+        new_struct.print_graph()
+        extended_subgraphs.append(new_struct)
+        # print("New mappings:")
+        # print(new_struct_mappings)
+        new_maps_per_struct.append(new_struct_mappings)
+
+    return extended_subgraphs
+
+def ExtendSubGraphTowardsTargetStruct(subgraph, graph, target_struct):
+    # print("Extending subgraph:")
+    # subgraph.print_graph()
+    extended_subgraphs = []
+    # print("Edges in subgraph: ", [len(v.edges) for v in list(subgraph.vertices.values())])
+    unused_edges = [e for v in list(subgraph.vertices.values()) for e in v.edges if e.id not in list(subgraph.edges.keys())]
+    # print("Unused edges:")
+    # for e in unused_edges:
+    #     e.print_edge()
+
+    for edge in unused_edges:
+        # print("")
+        # print("Processing edge", edge.id)
+        new_struct = Graph()
+        new_struct.vertices = subgraph.vertices.copy()
+        new_struct.edges = subgraph.edges.copy()
+        new_struct.edges[edge.id] = edge
+        if not edge.source.id in new_struct.vertices.keys():
+            new_struct.vertices[edge.source.id] = edge.source
+        else:
+            new_struct.vertices[edge.target.id] = edge.target
+        # print("Matching against:")
+        # new_struct.print_graph()
+        
+        # Creating copies to remove edges outside of the subgraphs
+        new_struct_copy = Graph()
+        for v in new_struct.vertices.values():
+            v_new = Vertex(v.id)
+            v_new.add_attribute('label', v.attributes['label'])
+            for ev in v.edges:
+                if ev.id in new_struct.edges.keys():
+                    v_new.add_edge(ev)
+            new_struct_copy.vertices[v_new.id] = v_new
+        for e in new_struct.edges.values():
+            new_struct_copy.edges[e.id] = e
+        target_struct_copy = Graph()
+        for v in target_struct.vertices.values():
+            v_new = Vertex(v.id)
+            v_new.add_attribute('label', v.attributes['label'])
+            for ev in v.edges:
+                if ev.id in target_struct.edges.keys():
+                    v_new.add_edge(ev)
+            target_struct_copy.vertices[v_new.id] = v_new
+        for e in target_struct.edges.values():
+            target_struct_copy.edges[e.id] = e
+
+        if GraphMatch(new_struct_copy, target_struct_copy):
+            extended_subgraphs.append(new_struct)
+    
+    return extended_subgraphs
 
 def GraphMatch(graph1, graph2):
     """Returns True if given graphs are isomorphic.
     This is a poly-time, approximate version of graph isomorphism."""
     global gMaxMappings
+    if (len(graph1.vertices) != len(graph2.vertices)):
+        return False
+    if (len(graph1.edges) != len(graph2.edges)):
+        return False
     if (len(graph1.edges) == 0):
         v1keys = list(graph1.vertices.keys())
         v2keys = list(graph2.vertices.keys())
         return MatchVertex(graph1, graph2, v1keys[0], v2keys[0])
-    
     gMaxMappings = len(graph1.edges) ** 2 # Limit search to E^2 mappings
+    mapping = {}
+    matchFound, numMappings = ExtendMapping(graph1, graph2, mapping)
+    # print("GraphMatch mapping:", mapping)
+    return matchFound
 
-    # print("g1 vertices: ", graph1.vertices)
-    # print("g2 vertices: ", graph2.vertices)
-    
-    cost = ExtendMapping(graph1, graph2)    
-    return (float(cost) / float(max(len(graph1.vertices), len(graph2.vertices)))) <= c_ratio_thr
-
-def ExtendMapping(graph1, graph2, mapping=None, cost = 0.0):
-    global c_max
-    if cost > c_max:
-        return cost
-    if mapping is None:
-        mapping = {}
-    if (len(mapping) == len(graph1.vertices)):
-        return cost
-    
-    map = mapping
-    v_id_c = None
-    for v_id_1 in graph1.vertices.keys():
-        if not (v_id_1 in map):
-            v_id_c = v_id_1
-            break
-    
-    c_b = math.inf
-    map_b = None
-    for v_id_2 in graph2.vertices.keys():
-        if not (v_id_2 in map):
-            c = getVertexMatchingCost(graph1, graph2, v_id_c, v_id_2)
-            if cost + c > c_max:
-                continue
-            map[v_id_c] = v_id_2
-            c_tot = ExtendMapping(graph1, graph2, map, cost + c)
-            if c_tot < c_b:
-                c_b = c_tot
-                map_b = map
-    # Map to lambda vertex
-    c = getVertexMatchingCost(graph1, graph2, v_id_c, -1)
-    if cost + c < c_max:
-        map[v_id_c] = -1  # Mapped to lambda
-        c_tot = ExtendMapping(graph1, graph2, map, cost + c)
-        if c_tot < c_b:
-            c_b = c_tot
-            map_b = map
-    if c_b >= c_max:
-        c_b = c_max + 1  # +1 is just to make c_b > c_max
-    mapping = map
-    return c_b
-
-def getVertexMatchingCost(graph1, graph2, v_id_1, v_id_2):
-    if v_id_1 == -1:
-        if v_id_2 == -1:
-            return 0
-        else:
-            return len(graph2.vertices[v_id_2].edges)
-    if v_id_2 == -1:
-        if v_id_1 == -1:
-            return 0
-        else:
-            # print("graph1 vertices:", graph1.vertices)
-            # print("v_id_1:", v_id_1)
-            return len(graph1.vertices[v_id_1].edges)
-    
-    ret_cost = 0
-    vertex1 = graph1.vertices[v_id_1]
-    vertex2 = graph2.vertices[v_id_2]
-    if not (vertex1.attributes == vertex2.attributes):
-        ret_cost += 1
-    
-    e1 = graph1.vertices[v_id_1].edges
-    e2 = graph2.vertices[v_id_2].edges
-
-    # print("e1 for v1:", e1)
-    # print("e2 for v2:", e2)
-
-    for e_1 in e1:
-        e_id_1 = e_1.id
-        if len(e2) <= 0:
-            break
-        c_b = math.inf
-        for e_2 in e2:
-            e_id_2 = e_2.id
-            useless = None
-            c = not MatchEdge(graph1, graph2, e_id_1, e_id_2, useless)
-            if not c:
-                c_b = c
-                break
-            elif c < c_b:
-                c_b = c
-                e2.remove(e_2)
-        ret_cost += c_b
-        e1.remove(e_1)
-    ret_cost += len(e1)
-
-    return ret_cost          
-
-
-# def ExtendMapping(graph1, graph2, mapping=None, numMappings=0):
-#     """Find the next unmapped edge in graph1 and try mapping it to each unmapped edge in graph2.
-#     Constrain number of mappings to be at most gMaxMappings. Return the match result and
-#     number of mappings so far."""
+# def GraphMatch(graph1, graph2):
+#     """Returns True if given graphs are isomorphic.
+#     This is a poly-time, approximate version of graph isomorphism."""
 #     global gMaxMappings
+#     if (len(graph1.edges) == 0):
+#         v1keys = list(graph1.vertices.keys())
+#         v2keys = list(graph2.vertices.keys())
+#         return MatchVertex(graph1, graph2, v1keys[0], v2keys[0])
+    
+#     gMaxMappings = len(graph1.edges) ** 2 # Limit search to E^2 mappings
+
+#     # print("g1 vertices: ", graph1.vertices)
+#     # print("g2 vertices: ", graph2.vertices)
+    
+#     cost = ExtendMapping(graph1, graph2)
+#     # print(cost)
+#     return (float(cost) / max(len(graph1.vertices), len(graph2.vertices))) <= c_ratio_thr
+
+
+# def ExtendMapping(graph1, graph2, mapping=None, cost = 0.0):
+#     global c_max
+#     if cost > c_max:
+#         return cost
+#     if mapping is None:
+#         mapping = {}
+#     if (len(mapping) == len(graph1.vertices)):
+#         return cost
+    
+#     map = mapping
+#     v_id_c = None
+#     for v_id_1 in graph1.vertices.keys():
+#         if not (v_id_1 in map):
+#             v_id_c = v_id_1
+#             break
+    
+#     c_b = 9999999999999999999
+#     map_b = None
+#     for v_id_2 in graph2.vertices.keys():
+#         if not (v_id_2 in map):
+#             c = getVertexMatchingCost(graph1, graph2, v_id_c, v_id_2)
+#             if cost + c > c_max:
+#                 continue
+#             map[v_id_c] = v_id_2
+#             c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+#             if c_tot < c_b:
+#                 c_b = c_tot
+#                 map_b = map
+#     # Map to lambda vertex
+#     c = getVertexMatchingCost(graph1, graph2, v_id_c, -1)
+#     if cost + c < c_max:
+#         map[v_id_c] = -1  # Mapped to lambda
+#         c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+#         if c_tot < c_b:
+#             c_b = c_tot
+#             map_b = map
+#     if c_b >= c_max:
+#         c_b = c_max + 1  # +1 is just to make c_b > c_max
+#     mapping = map_b
+#     return c_b
+
+# def getVertexMatchingCost(graph1, graph2, v_id_1, v_id_2):
+#     if v_id_1 == -1:
+#         if v_id_2 == -1:
+#             return 0
+#         else:
+#             return len(graph2.vertices[v_id_2].edges)
+#     if v_id_2 == -1:
+#         if v_id_1 == -1:
+#             return 0
+#         else:
+#             return len(graph1.vertices[v_id_1].edges)
+    
+#     ret_cost = 0
+#     vertex1 = graph1.vertices[v_id_1]
+#     vertex2 = graph2.vertices[v_id_2]
+#     if not (vertex1.attributes == vertex2.attributes):
+#         ret_cost += 1
+    
+#     e1 = graph1.vertices[v_id_1].edges
+#     e2 = graph2.vertices[v_id_2].edges
+
+#     # print("e1 for v1:", e1)
+#     # print("e2 for v2:", e2)
+
+#     for e_1 in e1:
+#         e_id_1 = e_1.id
+#         if len(e2) <= 0:
+#             break
+#         c_b = 99999999999999999
+#         for e_2 in e2:
+#             e_id_2 = e_2.id
+#             useless = None
+#             c = not MatchEdge(graph1, graph2, e_id_1, e_id_2, useless)
+#             if not c:
+#                 c_b = c
+#                 break
+#             elif c < c_b:
+#                 c_b = c
+#                 e2.remove(e_2)
+#         ret_cost += c_b
+#         e1.remove(e_1)
+#     ret_cost += len(e1)
+
+#     return ret_cost    
+
+# def ExtendMapping(graph1, graph2, mapping=None, cost = 0.0):
+#     global c_max
+#     if cost > c_max:
+#         return cost
 #     if mapping is None:
 #         mapping = {}
 #     if (len(mapping) == len(graph1.edges)):
-#         return True, numMappings
-#     if numMappings > gMaxMappings:
-#         return False, numMappings
-#     # Find unmapped edge in graph1 (should always exist at this point)
-#     edgeId1 = None
-#     for edgeId in graph1.edges:
-#         if (not (edgeId in mapping)):
-#             edgeId1 = edgeId
+#         return cost
+    
+#     map = mapping
+#     e_id_c = None
+#     for e_id_1 in graph1.edges:
+#         if not (e_id_1 in map):
+#             e_id_c = e_id_1
 #             break
-#     # Find unmapped, matching edge in graph2
-#     for edgeId2 in graph2.edges:
-#         if not (edgeId2 in mapping.values()):
-#             if MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
-#                 # Extend mapping
-#                 mapping[edgeId1] = edgeId2
-#                 matchFound, numMappings = ExtendMapping(graph1, graph2, mapping, numMappings + 1)
-#                 if matchFound:
-#                     return True, numMappings
-#                 mapping.pop(edgeId1)
-#     return False, numMappings
+    
+#     c_b = 9999999999999999
+#     map_b = None
+#     for e_id_2 in graph2.edges:
+#         if not (e_id_2 in map):
+#             c = getEdgeMatchingCost(graph1, graph2, e_id_c, e_id_2)
+#             if cost + c > c_max:
+#                 continue
+#             map[e_id_c] = e_id_2
+#             c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+#             if c_tot < c_b:
+#                 c_b = c_tot
+#                 map_b = map
+#     # Map to lambda vertex
+#     c = getEdgeMatchingCost(graph1, graph2, e_id_c, -1)
+#     if cost + c < c_max:
+#         map[e_id_c] = -1  # Mapped to lambda
+#         c_tot = ExtendMapping(graph1, graph2, map, cost + c)
+#         if c_tot < c_b:
+#             c_b = c_tot
+#             map_b = map
+#     if c_b >= c_max:
+#         c_b = c_max + 1  # +1 is just to make c_b > c_max
+#     mapping = map_b
+#     return c_b      
+
+def getEdgeMatchingCost(graph1, graph2, e_id_1, e_id_2):
+    if e_id_1 == -1:
+        if e_id_2 == -1:
+            return 0
+        else:
+            return 2
+    if e_id_2 == -1:
+        if e_id_1 == -1:
+            return 0
+        else:
+            return 2
+        
+    ret_cost = 0
+    edge1 = graph1.edges[e_id_1]
+    edge2 = graph2.edges[e_id_2]
+    vertex1s = graph1.vertices[edge1.source.id]
+    vertex1t = graph1.vertices[edge1.target.id]
+    vertex2s = graph2.vertices[edge2.source.id]
+    vertex2t = graph2.vertices[edge2.target.id]
+
+    # if(vertex1s.attributes != vertex2s.attributes):
+    #     if(vertex1s.attributes != vertex2t.attributes):
+    #         ret_cost += 1
+    # if(vertex1t.attributes != vertex2s.attributes):
+    #     if(vertex1t.attributes != vertex2t.attributes):
+    #         ret_cost += 1
+    # if not (edge1.attributes == edge2.attributes):
+    #     ret_cost += 1
+    
+    useless = None
+    ret_cost += not MatchEdge(graph1, graph2, e_id_1, e_id_2, useless)
+
+    return ret_cost
+
+def ExtendMapping(graph1, graph2, mapping=None, numMappings=0):
+    """Find the next unmapped edge in graph1 and try mapping it to each unmapped edge in graph2.
+    Constrain number of mappings to be at most gMaxMappings. Return the match result and
+    number of mappings so far."""
+    global gMaxMappings
+    if mapping is None:
+        mapping = {}
+    if (len(mapping) == len(graph1.edges)):
+        return True, numMappings
+    if numMappings > gMaxMappings:
+        return False, numMappings
+    # Find unmapped edge in graph1 (should always exist at this point)
+    edgeId1 = None
+    for edgeId in graph1.edges:
+        if (not (edgeId in mapping)):
+            edgeId1 = edgeId
+            break
+    # Find unmapped, matching edge in graph2
+    for edgeId2 in graph2.edges:
+        if not (edgeId2 in mapping.values()):
+            if MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
+                # Extend mapping
+                mapping[edgeId1] = edgeId2
+                matchFound, numMappings = ExtendMapping(graph1, graph2, mapping, numMappings + 1)
+                if matchFound:
+                    return True, numMappings
+                mapping.pop(edgeId1)
+    return False, numMappings
 
 def GraphMatch_Orig(graph1, graph2):
     """Returns True if given graphs are isomorphic.
@@ -478,6 +753,9 @@ def MatchEdge(graph1, graph2, edgeId1, edgeId2, mapping):
     # print("e2:", graph2.edges)
     edge1 = graph1.edges[edgeId1]
     edge2 = graph2.edges[edgeId2]
+    # if edgeId1 == '6':
+    #     print("Edge 1: s:", edge1.source.id, edge1.source.attributes['label'], "| t:", edge1.target.id, edge1.target.attributes['label'])
+    #     print("Edge 2: s:", edge2.source.id, edge2.source.attributes['label'], "| t:", edge2.target.id, edge2.target.attributes['label'])
     if not (edge1.attributes == edge2.attributes):
         return False
     if (edge1.directed != edge2.directed):
@@ -502,6 +780,7 @@ def MatchVertex(graph1, graph2, vertexId1, vertexId2):
     if not (vertex1.attributes == vertex2.attributes):
         return False
     if (len(vertex1.edges) != len(vertex2.edges)):
+        # print("VERTEX NEIGHBOR COUNT FAILED")
         return False
     # Temporal field only set if discovering temporal patterns; otherwise, this test always True
     if (vertex1.temporal != vertex2.temporal):

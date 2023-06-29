@@ -1,0 +1,28 @@
+[
+  {"vertex": {
+     "id": "1",
+     "attributes": {"label": "c"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "2",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "3",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "1",
+     "source": "1",
+     "target": "2",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "2",
+     "source": "1",
+     "target": "3",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}}
+]

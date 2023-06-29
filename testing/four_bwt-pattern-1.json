@@ -1,0 +1,89 @@
+[
+  {"vertex": {
+     "id": "1",
+     "attributes": {"label": "s"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "2",
+     "attributes": {"label": "s"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "3",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "4",
+     "attributes": {"label": "s"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "5",
+     "attributes": {"label": "s"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "6",
+     "attributes": {"label": "s"},
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "1",
+     "source": "1",
+     "target": "2",
+     "attributes": {"label": "p"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "2",
+     "source": "3",
+     "target": "1",
+     "attributes": {"label": "on"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "3",
+     "source": "3",
+     "target": "2",
+     "attributes": {"label": "on"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "4",
+     "source": "2",
+     "target": "4",
+     "attributes": {"label": "p"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "5",
+     "source": "3",
+     "target": "4",
+     "attributes": {"label": "on"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "6",
+     "source": "3",
+     "target": "5",
+     "attributes": {"label": "on"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "7",
+     "source": "3",
+     "target": "6",
+     "attributes": {"label": "on"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "8",
+     "source": "4",
+     "target": "5",
+     "attributes": {"label": "p"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "9",
+     "source": "5",
+     "target": "6",
+     "attributes": {"label": "p"},
+     "directed": "false",
+     "timestamp": "1"}}
+]

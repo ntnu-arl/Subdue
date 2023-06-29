@@ -11,6 +11,7 @@ import contextlib
 import Parameters
 import Graph
 import Pattern
+import networkx as nx
 
 DEBUGFLAG = False
 
@@ -23,10 +24,44 @@ def ReadGraph(inputFileName):
     graph.load_from_json(jsonGraphArray)
     inputFile.close()
     return graph
-   
+
+def createCustomPattern():
+    custom_pattern = Graph.Graph()
+    
+    # Add vertices
+    comp_vertex = Graph.Vertex(str(99))
+    # comp_vertex.id = str(99)
+    comp_vertex.add_attribute("label", "c")
+    custom_pattern.vertices[comp_vertex.id] = comp_vertex
+    for i in range(0,4):
+        wall_vertex = Graph.Vertex(str(99+i+1))
+        # wall_vertex.id = str(99+i+1)
+        wall_vertex.add_attribute("label", "w")
+        custom_pattern.vertices[wall_vertex.id] = wall_vertex
+    
+    # Add edges
+    for i in range(0,4):
+        sourceVertex = custom_pattern.vertices[str(99)]
+        targetVertex = custom_pattern.vertices[str(99+i+1)]
+        cw_edge = Graph.Edge(str(99+i), sourceVertex, targetVertex, False)
+        # cw_edge = Graph.Edge()
+        # cw_edge.id = str(99+i)
+        # cw_edge.source = str(99)
+        # cw_edge.target = str(99+i+1)
+        cw_edge.add_attribute("label", "e")
+        custom_pattern.edges[cw_edge.id] = cw_edge
+        sourceVertex.add_edge(cw_edge)
+        targetVertex.add_edge(cw_edge)
+    
+    return custom_pattern
+
+
 def DiscoverPatterns(parameters, graph):
     """The main discovery loop. Finds and returns best patterns in given graph."""
     patternCount = 0
+
+    custom_pattern = createCustomPattern()
+
     # get initial one-edge patterns
     parentPatternList = GetInitialPatterns(parameters, graph)
     if DEBUGFLAG:
@@ -40,6 +75,10 @@ def DiscoverPatterns(parameters, graph):
         # extend each pattern in parent list (***** todo: in parallel)
         while (parentPatternList):
             parentPattern = parentPatternList.pop(0)
+            for parentInstance in parentPattern.instances:
+                parentGraph = Graph.CreateGraphFromInstance(parentInstance)
+                if(Graph.GraphMatch(custom_pattern, parentGraph)):
+                    print("Custom pattern match found")
             if ((len(parentPattern.instances) > 1) and (patternCount < parameters.limit)):
                 patternCount += 1
                 extendedPatternList = Pattern.ExtendPattern(parameters, parentPattern)
@@ -65,6 +104,15 @@ def DiscoverPatterns(parameters, graph):
         if (len(parentPattern.definition.edges) >= parameters.minSize):
             Pattern.PatternListInsert(parentPattern, discoveredPatternList, parameters.numBest, False) # valueBased = False
     return discoveredPatternList
+
+def DiscoverStarPatterns(parameters, graph):
+    initial_pattern_list = GetInitialStarPatterns(parameters, graph)
+    discovered_patterns = []
+    for pattern in initial_pattern_list:
+        pattern.evaluate(graph)
+        Pattern.PatternListInsert(pattern, discovered_patterns, parameters.beamWidth, parameters.valueBased)
+    
+    return discovered_patterns
 
 def GetInitialPatterns(parameters, graph):
     """Returns list of single-edge, evaluated patterns in given graph with more than one instance."""
@@ -98,7 +146,289 @@ def GetInitialPatterns(parameters, graph):
         edgeGraphInstancePairs = nonmatchingEdgePairs
     return initialPatternList
 
+def GetInitialStarPatterns(parameters, graph):
+    initialPatternList = []
+    vertexGraphInstancePairs = []
+    for vertex in graph.vertices.values():
+        new_instance = Pattern.Instance()
+        new_instance.vertices.add(vertex)
+        for edge in vertex.edges:
+            new_instance.edges.add(edge)
+            if(edge.source == vertex):
+                new_instance.vertices.add(edge.target)
+            else:
+                new_instance.vertices.add(edge.source)
+        graph1 = Graph.CreateGraphFromInstance(new_instance)
+        vertexGraphInstancePairs.append((graph1, new_instance))
+    while vertexGraphInstancePairs:
+        vertexPair1 = vertexGraphInstancePairs.pop(0)
+        graph1 = vertexPair1[0]
+        instance1 = vertexPair1[1]
+        pattern = Pattern.Pattern()
+        pattern.definition = graph1
+        pattern.instances.append(instance1)
+        nonmatchingVertexPairs = []
+        for vertexPair2 in vertexGraphInstancePairs:
+            graph2 = vertexPair2[0]
+            instance2 = vertexPair2[1]
+            if Graph.GraphMatch(graph1,graph2) and (not Pattern.InstancesOverlap(parameters.overlap, pattern.instances, instance2)):
+                pattern.instances.append(instance2)
+            else:
+                nonmatchingVertexPairs.append(vertexPair2)
+        if len(pattern.instances) > 1:
+            pattern.evaluate(graph)
+            initialPatternList.append(pattern)
+        vertexGraphInstancePairs = nonmatchingVertexPairs
+    return initialPatternList
+
+
 def Subdue(parameters, graph):
+    """
+    Top-level function for Subdue that discovers best pattern in graph.
+    Optionally, Subdue can then compress the graph with the best pattern, and iterate.
+
+    :param graph: instance of Subdue.Graph
+    :param parameters: instance of Subdue.Parameters
+    :return: patterns for each iteration -- a list of iterations each containing discovered patterns.
+    """
+    startTime = time.time()
+    iteration = 1
+    done = False
+    patterns = list()
+    limit_og = parameters.limit
+    while ((iteration <= parameters.iterations) and (not done)):
+        iterationStartTime = time.time()
+        if (iteration > 1):
+            print("----- Iteration " + str(iteration) + " -----\n")
+        print("Graph: " + str(len(graph.vertices)) + " vertices, " + str(len(graph.edges)) + " edges")
+        # parameters.limit = limit_og / float(iteration*iteration)
+        print("limit for this iteration:", parameters.limit)
+        patternList = DiscoverPatterns(parameters, graph)
+        if (not patternList):
+            done = True
+            print("No patterns found.\n")
+        else:
+            patterns.append(patternList)
+            print("\nBest " + str(len(patternList)) + " patterns:\n")
+            for pattern in patternList:
+                pattern.print_pattern('  ')
+                print("")
+                pattern.analyze(graph)
+                print("Class counts:")
+                print(pattern.class_counts)
+                print("Class probs:")
+                print(pattern.class_probs)
+            # write machine-readable output, if requested
+            if (parameters.writePattern):
+                outputFileName = parameters.outputFileName + "-pattern-" + str(iteration) + ".json"
+                patternList[0].definition.write_to_file(outputFileName)
+            if (parameters.writeInstances):
+                outputFileName = parameters.outputFileName + "-instances-" + str(iteration) + ".json"
+                patternList[0].write_instances_to_file(outputFileName)
+            if ((iteration < parameters.iterations) or (parameters.writeCompressed)):
+                graph.Compress(iteration, patternList[0])
+            
+            patternList[0].updateInstanceVertices()
+            doesPatternFit(patternList[0], graph)
+            
+            if (iteration < parameters.iterations):
+                # consider another iteration
+                if (len(graph.edges) == 0):
+                    done = True
+                    print("Ending iterations - graph fully compressed.\n")
+            if ((iteration == parameters.iterations) and (parameters.writeCompressed)):
+                outputFileName = parameters.outputFileName + "-compressed-" + str(iteration) + ".json"
+                graph.write_to_file(outputFileName)
+        if (parameters.iterations > 1):
+             iterationEndTime = time.time()
+             print("Elapsed time for iteration " + str(iteration) + " = " + str(iterationEndTime - iterationStartTime) + " seconds.\n")
+        iteration += 1
+    endTime = time.time()
+    print("SUBDUE done. Elapsed time = " + str(endTime - startTime) + " seconds\n")
+    return patterns
+
+
+
+def doesPatternFit(pattern, graph):
+    # global gMaxMappings
+    # print("gMaxMappings", gMaxMappings)
+    print("---------")
+    # sorted_probs = sorted(pattern.class_probs.items(), key=lambda x:x[1])
+    sorted_probs = sorted(pattern.class_probs.items(), key=lambda x:x[1], reverse=True)
+    best_class = sorted_probs[0][0]
+    print("For pattern")
+    pattern.definition.print_graph('  ')
+    print("Best class:", best_class)
+    start_vertex = None
+    # for v in graph.vertices.values():
+    #     if v.attributes['label'] == best_class and not v.in_a_pattern:
+    #         start_vertex = v
+    #         break
+    # print("Extending all possible vertices:")
+    for v in graph.vertices.values():
+        print("Testing")
+        v.print_vertex()
+        if v.attributes['label'] == best_class and not v.in_a_pattern:
+            start_vertex = v
+            print("Start vertex: ")
+            start_vertex.print_vertex()
+            best_subgraph = Graph.Graph()
+            best_subgraph.vertices[start_vertex.id] = start_vertex
+            subgraph_pattern_maps = []
+            for v in pattern.definition.vertices.values():
+                if v.attributes['label'] == start_vertex.attributes['label']:
+                    map_1 = {start_vertex.id : v.id}
+                    subgraph_pattern_maps.append(map_1)
+            new_maps_per_struct = []
+            extended_subgraphs = Graph.ExtendSubGraphWithPatternCheck(best_subgraph, graph, pattern, subgraph_pattern_maps, new_maps_per_struct)
+            print("Extended subgraph:")
+            for esg in extended_subgraphs:
+                esg.print_graph()
+            if len(extended_subgraphs) > 0:
+                break
+            print("--")
+    print("==========================================")
+    print("==========================================")
+    print("Start vertex: ")
+    start_vertex.print_vertex()
+
+    current_structures = []
+    # print("Graph vertices:")
+    # graph.print_graph()
+    for vid in graph.label_maps[best_class]:
+        if not vid == start_vertex.id:
+            g = Graph.Graph()
+            g.vertices[vid] = graph.vertices[vid]
+            current_structures.append(g)
+    
+    best_struct_match_prob = pattern.class_probs[best_class]
+    best_subgraph = Graph.Graph()
+    best_subgraph.vertices[start_vertex.id] = start_vertex
+    subgraph_pattern_maps = []
+    for v in pattern.definition.vertices.values():
+        if v.attributes['label'] == start_vertex.attributes['label']:
+            map_1 = {start_vertex.id : v.id}
+            subgraph_pattern_maps.append(map_1)
+    print("==========================================")
+    _i = 0
+    # while best_struct_match_prob < 0.9:
+    next_subgraph = best_subgraph
+    best_subgraph_pattern_maps = subgraph_pattern_maps
+    while _i < 4:
+        print("Iteration:", _i)
+        _i += 1
+        print("Best prob before:", best_struct_match_prob)
+        new_maps_per_struct = []
+        extended_subgraphs = Graph.ExtendSubGraphWithPatternCheck(next_subgraph, graph, pattern, subgraph_pattern_maps, new_maps_per_struct)
+        if len(extended_subgraphs) <= 0:
+            print("No more valid extensions. Exiting")
+            break
+
+        next_structures = []
+        
+        print("Extended subgraphs:")
+        for esg in extended_subgraphs:
+            esg.print_graph()
+        
+        print("---------------------------")
+        
+        # for target_subgraph in extended_subgraphs:
+        best_prob_this_round = 0.0
+        for i in range(0,len(extended_subgraphs)):
+            target_subgraph = extended_subgraphs[i]
+            print("")
+            print("Target subgraph:")
+            target_subgraph.print_graph()
+            target_subgraph
+            target_subgraph_instances = []
+            print("Extending current structures")
+            for g in current_structures:
+                target_subgraph_instances += Graph.ExtendSubGraphTowardsTargetStruct(g, graph, target_subgraph)
+                # print("---")
+            target_subgraph_instances = Graph.removeDuplicateGraphs(target_subgraph_instances)
+            print("Num of extended structs:", len(target_subgraph_instances))
+            total_instances = len(target_subgraph_instances)
+            pattern_instances = 0
+            for inst in target_subgraph_instances:
+                # inst.print_graph()
+                valid = True
+                for v in inst.vertices.values():
+                    if not v.in_a_pattern:
+                        valid = False
+                pattern_instances += int(valid)
+                # if valid:
+                #     print("In pattern")
+                # else:
+                #     print("Not in pattern")
+            print("Pattern instances:", pattern_instances, "Total instances:", total_instances)
+            struct_prob = float(pattern_instances) / float(total_instances)
+            print("struct_prob:", struct_prob)
+            if struct_prob > best_prob_this_round or struct_prob >= 1.0:
+                best_prob_this_round = struct_prob
+                next_structures = target_subgraph_instances
+                next_subgraph = target_subgraph
+                subgraph_pattern_maps = new_maps_per_struct[i]
+
+            if struct_prob > best_struct_match_prob or struct_prob >= 1.0:
+                best_struct_match_prob = struct_prob
+                best_subgraph = target_subgraph
+                best_subgraph_pattern_maps = new_maps_per_struct[i]
+        
+            print("Best prob after:", best_struct_match_prob)
+            print("---------------------------")
+
+        print("Best structure this round (prob", best_prob_this_round, ")")
+        next_subgraph.print_graph()
+        print("Best structure so far (prob", best_struct_match_prob, ")")
+        best_subgraph.print_graph()
+
+
+        if len(next_structures) <= 0:
+            break
+        
+        
+        current_structures = next_structures
+
+        # for i in range(0,len(extended_subgraphs)):
+        #     if len(extended_subgraphs) > 0:
+        #         best_subgraph = extended_subgraphs[i]
+        #         subgraph_pattern_maps = new_maps_per_struct[i]
+        #         break
+        print("==========================================")
+    
+    print("==========================================")
+    print("Outcome:")
+    print("Best subgraph:")
+    best_subgraph.print_graph()
+    print("With probabilty:", best_struct_match_prob)
+    # while best_struct_match_prob < 0.8:
+    #     extended_subgraphs = Graph.ExtendSubGraphWithPatternCheck(best_subgraph, graph, pattern, subgraph_pattern_maps)
+    #     if len(extended_subgraphs <= 0):
+    #         break
+    #     next_structures = []
+    #     for target_subgraph in extended_subgraphs:
+    #         target_subgraph_instances = []
+    #         for g in current_structures:
+    #             target_subgraph_instances += Graph.ExtendSubGraphTowardsTargetStruct(g, graph, target_subgraph)
+    #         target_subgraph_instances = Graph.removeDuplicateGraphs(target_subgraph_instances)
+    #         total_instances = len(target_subgraph_instances)
+    #         pattern_instances = 0
+    #         for inst in target_subgraph_instances:
+    #             for v in inst.vertices.values():
+    #                 if v.in_a_pattern:
+    #                     pattern_instances += 1
+    #         struct_prob = float(pattern_instances) / float(total_instances)
+    #         if struct_prob > best_struct_match_prob:
+    #             best_struct_match_prob = struct_prob
+    #             next_structures = target_subgraph_instances
+    #             best_subgraph = target_subgraph[0]
+    #     if len(next_structures <= 0):
+    #         break
+
+
+
+
+def SubdueStar(parameters, graph):
     """
     Top-level function for Subdue that discovers best pattern in graph.
     Optionally, Subdue can then compress the graph with the best pattern, and iterate.
@@ -116,7 +446,7 @@ def Subdue(parameters, graph):
         if (iteration > 1):
             print("----- Iteration " + str(iteration) + " -----\n")
         print("Graph: " + str(len(graph.vertices)) + " vertices, " + str(len(graph.edges)) + " edges")
-        patternList = DiscoverPatterns(parameters, graph)
+        patternList = DiscoverStarPatterns(parameters, graph)
         if (not patternList):
             done = True
             print("No patterns found.\n")
@@ -226,12 +556,17 @@ def main():
     print("SUBDUE v1.4 (python)\n")
     parameters = Parameters.Parameters()
     parameters.set_parameters(sys.argv)
-    graph = ReadGraph(parameters.inputFileName)
+    subdue_graph = ReadGraph(parameters.inputFileName)
+    # graph = nx.Graph(nx.nx_pydot.read_dot(parameters.inputFileName))
+    # subdue_graph = Graph.Graph()
+    # subdue_graph.load_from_networkx(graph)
+    # subdue_graph.print_graph()
     #outputFileName = parameters.outputFileName + ".dot"
     #graph.write_to_dot(outputFileName)
-    parameters.set_defaults_for_graph(graph)
+    parameters.set_defaults_for_graph(subdue_graph)
     parameters.print()
-    Subdue(parameters, graph)
+    Subdue(parameters, subdue_graph)
+    # SubdueStar(parameters, graph)
 
 if __name__ == "__main__":
     main()

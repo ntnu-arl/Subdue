@@ -13,12 +13,16 @@ class Pattern:
         self.definition = None # Graph
         self.instances = []
         self.value = 0.0
+        self.class_probs = {}
+        self.class_counts = {}
     
     def evaluate (self, graph):
         """Compute value of using given pattern to compress given graph, where 0 means no compression, and 1 means perfect compression."""
         # (instances-1) because we would also need to retain the definition of the pattern for compression
-        self.value = float(((len(self.instances) - 1) * len(self.definition.edges)) / float(len(graph.edges)))
-        # self.value = float((len(self.instances) - 1) * len(self.definition.edges))
+        self.value = float(((len(self.instances) - 1) * len(self.definition.edges)) / float(len(graph.edges)))  # OG
+        # self.value = float((len(self.instances)) * len(self.definition.edges))
+        # self.value = float((len(self.instances) - 1) * len(self.definition.vertices))
+        # self.value = float(len(self.instances))
     
     def print_pattern(self, tab):
         print(tab + "Pattern (value=" + str(self.value) + ", instances=" + str(len(self.instances)) + "):")
@@ -42,6 +46,21 @@ class Pattern:
             instance.write_to_file(outputFile)
         outputFile.write('\n]\n')
         outputFile.close()
+
+    def analyze(self, graph):
+        for v in self.definition.vertices.values():
+            class_v = v.attributes['label']
+            if class_v in self.class_counts:
+                self.class_counts[class_v] += 1
+            else:
+                self.class_counts[class_v] = 1
+        for class_v, num in self.class_counts.items():
+            self.class_probs[class_v] = float(num * len(self.instances)) / float(len(graph.label_maps[class_v]))
+    
+    def updateInstanceVertices(self):
+        for instance in self.instances:
+            for v in instance.vertices:
+                v.in_a_pattern = True
 
 class Instance:
     

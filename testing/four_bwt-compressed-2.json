@@ -1,0 +1,160 @@
+[
+  {"vertex": {
+     "id": "16",
+     "attributes": {"label": "m"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "32",
+     "attributes": {"label": "m"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "36",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "37",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "38",
+     "attributes": {"label": "m"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "42",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "43",
+     "attributes": {"label": "w"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-1-1",
+     "attributes": {"label": "PATTERN-1"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-1-2",
+     "attributes": {"label": "PATTERN-1"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-1-3",
+     "attributes": {"label": "PATTERN-1"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-1-4",
+     "attributes": {"label": "PATTERN-1"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-2-1",
+     "attributes": {"label": "PATTERN-2"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-2-2",
+     "attributes": {"label": "PATTERN-2"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-2-3",
+     "attributes": {"label": "PATTERN-2"},
+     "timestamp": "1"}},
+  {"vertex": {
+     "id": "PATTERN-2-4",
+     "attributes": {"label": "PATTERN-2"},
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "3",
+     "source": "PATTERN-2-1",
+     "target": "PATTERN-1-1",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "4",
+     "source": "PATTERN-2-1",
+     "target": "PATTERN-1-2",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "23",
+     "source": "PATTERN-2-1",
+     "target": "16",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "24",
+     "source": "PATTERN-2-2",
+     "target": "16",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "25",
+     "source": "PATTERN-2-2",
+     "target": "PATTERN-1-3",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "26",
+     "source": "PATTERN-2-2",
+     "target": "PATTERN-1-4",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "47",
+     "source": "PATTERN-2-2",
+     "target": "32",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "50",
+     "source": "PATTERN-2-3",
+     "target": "36",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "51",
+     "source": "PATTERN-2-3",
+     "target": "37",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "52",
+     "source": "PATTERN-2-3",
+     "target": "32",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "55",
+     "source": "PATTERN-2-4",
+     "target": "42",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "56",
+     "source": "PATTERN-2-4",
+     "target": "43",
+     "attributes": {"label": "e"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "57",
+     "source": "PATTERN-2-4",
+     "target": "38",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}},
+  {"edge": {
+     "id": "58",
+     "source": "PATTERN-2-3",
+     "target": "38",
+     "attributes": {"label": "ecm"},
+     "directed": "false",
+     "timestamp": "1"}}
+]
